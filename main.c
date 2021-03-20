@@ -22,7 +22,6 @@ int THREAD_NUM;			// # of threads requesting memory from the MMS thread
 int FUNCTION_NUM;		// 1 = first fit, 2 = best fit, 3 = worst fit 
 int defrag;             // 0 = defragmentation disabled, 1 = defragmentation enabled
 
-//int memory_table[6][20];
 int memory_table[20][6];
 int count = 1;
 int curr_mem_size = 0;		// Keep track of how much memory is available
@@ -45,8 +44,6 @@ int position = 0;
 struct user_thread_info* user_th_buff2[BUFFER_SIZE];
 int position2 = 0;
 
-//int* memory_allocate(int size, int num);
-
 void print_memory() 
 {
 	int i, j;
@@ -66,78 +63,88 @@ void print_memory()
 
 //}
 
-void update_memory_table(int row, int size, int thread_id, int compress_mem)
+void insert_memory_block(int row, int size, int thread_id)
 {
 	int i;
-	if(compress_mem == 0) {
-		for(i = count; i > row; i--) {
-			memory_table[i][0] = memory_table[i - 1][0] + 1;
-			memory_table[i][1] = memory_table[i - 1][1] - size;
-			memory_table[i][2] = memory_table[i - 1][2] + size;
-			memory_table[i][3] = memory_table[i][2] + (memory_table[i][1] - 1);
-			memory_table[i][4] = memory_table[i - 1][4];
-			memory_table[i][5] = memory_table[i - 1][5];
-			count++;
-		}
-		memory_table[row][1] = size;
-		memory_table[row][3] = memory_table[row][2] + (memory_table[row][1]- 1);
-		memory_table[row][4] = 1;
-		memory_table[row][5] = thread_id;
+
+	for(i = count; i > row; i--) {
+		memory_table[i][0] = memory_table[i - 1][0] + 1;
+		memory_table[i][1] = memory_table[i - 1][1] - size;
+		memory_table[i][2] = memory_table[i - 1][2] + size;
+		memory_table[i][3] = memory_table[i][2] + (memory_table[i][1] - 1);
+		memory_table[i][4] = memory_table[i - 1][4];
+		memory_table[i][5] = memory_table[i - 1][5];
+		count++;
 	}
-	else {
-		// Compressing memory
-		memory_table[row][4] = 0;
-		memory_table[row][5] = 0;
-		if(row == 0 && count != 1) {		// Will have to check if
-			if(memory_table[row + 1][4] == 0) {
-				//concatenate(row);
-				memory_table[row][1] += memory_table[row + 1][1];
-				memory_table[row][3] += memory_table[row + 1][1];
-				count--;
+	memory_table[row][1] = size;
+	memory_table[row][3] = memory_table[row][2] + (memory_table[row][1]- 1);
+	memory_table[row][4] = 1;
+	memory_table[row][5] = thread_id;
+}
+
+void remove_memory_block(int row, int size, int thread_id)		// Compressing memory
+{
+	int i;
+
+	memory_table[row][4] = 0;
+	memory_table[row][5] = 0;
+	if(row == 0) {		// Will have to check if && count != 1??
+		if(memory_table[row + 1][4] == 0) {
+			memory_table[row][1] += memory_table[row + 1][1];
+			memory_table[row][3] += memory_table[row + 1][1];
+			for(i = row + 1; i < count - 1; i++) {
+				// Shift memory table up
+				memory_table[i][0] = memory_table[i - 1][0] + 1;
+				memory_table[i][1] = memory_table[i + 1][1];
+				memory_table[i][2] = memory_table[i - 1][3] + 1;
+				memory_table[i][3] = memory_table[i + 1][3];
+				memory_table[i][4] = memory_table[i + 1][4];
+				memory_table[i][5] = memory_table[i + 1][5];				
 			}
+			count--;
 		}
-		else if(row == count - 1) {
-			if(memory_table[row - 1][4] == 0) {
+	}
+	else if(row == count - 1) {
+		if(memory_table[row - 1][4] == 0) {
+			memory_table[row - 1][1] += memory_table[row][1];
+			memory_table[row - 1][3] += memory_table[row][1];
+			count--;
+		}
+	}
+	else {	// FIX NEXT
+		while(memory_table[row - 1][4] == 0 || memory_table[row + 1][4] == 0 && count != 1) {	// && count != 1 ?
+			if(count != 1 && memory_table[row - 1][4] == 0) {
 				memory_table[row - 1][1] += memory_table[row][1];
 				memory_table[row - 1][3] += memory_table[row][1];
-				count--;
-			}
-		}
-		else {
-			while(memory_table[row - 1][4] == 0 || memory_table[row + 1][4] == 0 && count != 1) {	// && count != 1 ?
-				if(count != 1 && memory_table[row - 1][4] == 0) {
-					memory_table[row - 1][1] += memory_table[row][1];
-					memory_table[row - 1][3] += memory_table[row][1];
-					//count--;	
-					for(i = row; i < count; i++) {
-						memory_table[i][0] = memory_table[i - 1][0] + 1;
-						memory_table[i][1] = memory_table[i + 1][1];
-						memory_table[i][2] = memory_table[i - 1][3] + 1;
-						memory_table[i][3] = memory_table[i + 1][3];
-						memory_table[i][4] = memory_table[i + 1][4];
-						memory_table[i][5] = memory_table[i + 1][5];
-					}
-					count--;			
+				//count--;	
+				for(i = row; i < count; i++) {
+					memory_table[i][0] = memory_table[i - 1][0] + 1;
+					memory_table[i][1] = memory_table[i + 1][1];
+					memory_table[i][2] = memory_table[i - 1][3] + 1;
+					memory_table[i][3] = memory_table[i + 1][3];
+					memory_table[i][4] = memory_table[i + 1][4];
+					memory_table[i][5] = memory_table[i + 1][5];
 				}
+				count--;			
+			}
 
-				if(count != 1 && memory_table[row + 1][4] == 0) {
-					memory_table[row][1] += memory_table[row + 1][1];
-					memory_table[row][3] += memory_table[row + 1][1];
-					//count--;
-					for(i = row + 1; i < count; i++) {
-						memory_table[i][0] = memory_table[i - 1][0] + 1;
-						memory_table[i][1] = memory_table[i + 1][1];
-						memory_table[i][2] = memory_table[i - 1][3] + 1;
-						memory_table[i][3] = memory_table[i + 1][3];
-						memory_table[i][4] = memory_table[i + 1][4];
-						memory_table[i][5] = memory_table[i + 1][5];
-					}
-				count--;
+			if(count != 1 && memory_table[row + 1][4] == 0) {
+				memory_table[row][1] += memory_table[row + 1][1];
+				memory_table[row][3] += memory_table[row + 1][1];
+				//count--;
+				for(i = row + 1; i < count; i++) {
+					memory_table[i][0] = memory_table[i - 1][0] + 1;
+					memory_table[i][1] = memory_table[i + 1][1];
+					memory_table[i][2] = memory_table[i - 1][3] + 1;
+					memory_table[i][3] = memory_table[i + 1][3];
+					memory_table[i][4] = memory_table[i + 1][4];
+					memory_table[i][5] = memory_table[i + 1][5];
 				}
+			count--;
 			}
 		}
-		curr_mem_size -= size;
 	}
+	curr_mem_size -= size;
 }
 
 int* first_fit(int size_request, int thread_num) 
@@ -148,7 +155,7 @@ int* first_fit(int size_request, int thread_num)
 	printf("First Fit\n\n");
 	for(i = 0; i < count; i++) {
 		if(memory_table[i][4] != 1 && memory_table[i][1] >= size_request) {
-			update_memory_table(i, size_request, thread_num, 0);
+			insert_memory_block(i, size_request, thread_num);
 			starting_ptr = memory_block_ptr;
 			return starting_ptr;	
 		}
@@ -178,7 +185,7 @@ void memory_deallocate(int size, int num)
 	printf("MEMORY FREE\n\n");
 	for(i = 0; i < count; i++) {
 		if(memory_table[i][5] == num) {
-			update_memory_table(i, size, num, 1);
+			remove_memory_block(i, size, num);
 			break;			
 		}
 	}
@@ -277,11 +284,11 @@ void *user(void *arg)       // Starting function for user threads
 int main(int argc, char **argv)
 {
 	srand(time(NULL));	
-	//THREAD_NUM = atoi(argv[1]);
-	//FUNCTION_NUM = atoi(argv[2]);
+	THREAD_NUM = atoi(argv[1]);
+	FUNCTION_NUM = atoi(argv[2]);
 
-	THREAD_NUM = 3;
-	FUNCTION_NUM = 1;
+	//THREAD_NUM = 3;
+	//FUNCTION_NUM = 1;
 	//defrag = atoi(argv[3]);
 	int i;
 	memory_block_ptr = malloc(MAX_MEMORY_SIZE * sizeof(int));		// Allocate block of memory
