@@ -91,16 +91,6 @@ void insert_memory_block(int row, int size, int thread_id)
 			}	
 			count++;
 		}
-		else {
-			for(i = count; i > row; i--) {						// Shift memory down but only increment block #
-				memory_table[i][0] = memory_table[i - 1][0] + 1;
-				memory_table[i][1] = memory_table[i - 1][1];
-				memory_table[i][2] = memory_table[i - 1][2];
-				memory_table[i][3] = memory_table[i - 1][3];
-				memory_table[i][4] = memory_table[i - 1][4];
-				memory_table[i][5] = memory_table[i - 1][5];
-			}			
-		}
 	}
 
 	memory_table[row][1] = size;
@@ -114,7 +104,8 @@ void concatenate()
 	int i, k;
 
 	for(i = 0; i < count; i++) {
-		if(count != 1 && memory_table[i][4] == 0) {
+		//if(count != 1 && memory_table[i][4] == 0) {
+		if(memory_table[i][4] == 0) {
 			if(i != count - 1 && memory_table[i + 1][4] == 0) {
 				memory_table[i][1] += memory_table[i + 1][1];
 				memory_table[i][3] += memory_table[i + 1][1];
@@ -128,6 +119,7 @@ void concatenate()
 					memory_table[k][4] = memory_table[k + 1][4];
 					memory_table[k][5] = memory_table[k + 1][5];					
 				}
+				i--;
 			}
 			else {
 				i++;
@@ -241,7 +233,7 @@ void *user(void *arg)       // Starting function for user threads
 {
 	struct user_thread_info* user_thread = malloc(sizeof(struct user_thread_info));
 	user_thread->num_thread = *(int*)arg;
-	user_thread->sleep_time = (rand() % 10) + 1;
+	user_thread->sleep_time = (rand() % 20) + 1;
 	user_thread->mem_size = (rand() % MAX_MEMORY_SIZE / 4) + 1;
 	if(user_thread->mem_size % 2 != 0) {
 		user_thread->mem_size = user_thread->mem_size + 1;
@@ -279,7 +271,7 @@ int main(int argc, char **argv)
 	//THREAD_NUM = atoi(argv[1]);
 	//FUNCTION_NUM = atoi(argv[2]);
 
-	THREAD_NUM = 4;
+	THREAD_NUM = 6;
 	FUNCTION_NUM = 1;
 	//defrag = atoi(argv[3]);
 	int i;
