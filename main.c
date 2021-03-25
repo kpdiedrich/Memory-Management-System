@@ -61,16 +61,48 @@ void print_memory()
 void insert_memory_block(int row, int size, int thread_id)
 {
 	int i;
-
-	for(i = count; i > row; i--) {
-		memory_table[i][0] = memory_table[i - 1][0] + 1;
-		memory_table[i][1] = memory_table[i - 1][1] - size;
-		memory_table[i][2] = memory_table[i - 1][2] + size;
-		memory_table[i][3] = memory_table[i][2] + (memory_table[i][1] - 1);
-		memory_table[i][4] = memory_table[i - 1][4];
-		memory_table[i][5] = memory_table[i - 1][5];
-		count++;
+	curr_mem_size += size;
+	if(row != count - 1 && size < memory_table[row][1]) {			
+		for(i = count; i > row + 1; i--) {						// Shift memory down but only increment block #
+			memory_table[i][0] = memory_table[i - 1][0] + 1;
+			memory_table[i][1] = memory_table[i - 1][1];
+			memory_table[i][2] = memory_table[i - 1][2];
+			memory_table[i][3] = memory_table[i - 1][3];
+			memory_table[i][4] = memory_table[i - 1][4];
+			memory_table[i][5] = memory_table[i - 1][5];
+		}
+		memory_table[row + 1][0] = memory_table[row][0] + 1;
+		memory_table[row + 1][1] = memory_table[row][1] - size;
+		memory_table[row + 1][2] = memory_table[row][2] + size;
+		memory_table[row + 1][3] = memory_table[row + 1][2] + (memory_table[row + 1][1] - 1);
+		memory_table[row + 1][4] = 0;
+		memory_table[row + 1][5] = 0;
+		count++;								// Will create smaller hole so need to increment count
 	}
+	else {
+		if(size != memory_table[row][1]) {
+			for(i = count; i > row; i--) {
+				memory_table[i][0] = memory_table[i - 1][0] + 1;
+				memory_table[i][1] = memory_table[i - 1][1] - size;
+				memory_table[i][2] = memory_table[i - 1][2] + size;
+				memory_table[i][3] = memory_table[i][2] + (memory_table[i][1] - 1);
+				memory_table[i][4] = memory_table[i - 1][4];
+				memory_table[i][5] = memory_table[i - 1][5];
+			}	
+			count++;
+		}
+		else {
+			for(i = count; i > row; i--) {						// Shift memory down but only increment block #
+				memory_table[i][0] = memory_table[i - 1][0] + 1;
+				memory_table[i][1] = memory_table[i - 1][1];
+				memory_table[i][2] = memory_table[i - 1][2];
+				memory_table[i][3] = memory_table[i - 1][3];
+				memory_table[i][4] = memory_table[i - 1][4];
+				memory_table[i][5] = memory_table[i - 1][5];
+			}			
+		}
+	}
+
 	memory_table[row][1] = size;
 	memory_table[row][3] = memory_table[row][2] + (memory_table[row][1]- 1);
 	memory_table[row][4] = 1;
@@ -79,71 +111,31 @@ void insert_memory_block(int row, int size, int thread_id)
 
 void concatenate()
 {
-	int i, j = 0;
-	int map[10] = {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
+	int i, k;
 
 	for(i = 0; i < count; i++) {
-		if(memory_table[i][4] == 0) {
-			map[j] = i;
-			j++;
+		if(count != 1 && memory_table[i][4] == 0) {
+			if(i != count - 1 && memory_table[i + 1][4] == 0) {
+				memory_table[i][1] += memory_table[i + 1][1];
+				memory_table[i][3] += memory_table[i + 1][1];
+				count--;
+				for(k = i + 1; k < count; k++) {
+					// Shift memory table up
+					memory_table[k][0] = memory_table[k - 1][0] + 1;
+					memory_table[k][1] = memory_table[k + 1][1];
+					memory_table[k][2] = memory_table[k - 1][3] + 1;
+					memory_table[k][3] = memory_table[k + 1][3];
+					memory_table[k][4] = memory_table[k + 1][4];
+					memory_table[k][5] = memory_table[k + 1][5];					
+				}
+			}
+			else {
+				i++;
+			}
 		}
 	}
-
-	printf("Here\n");
-	
+	//concatenate();
 }
-
-/*
-void remove_memory_block(int row, int size, int thread_id)		// Compressing memory
-{
-	int i;
-
-
-
-	if(row == 0) {		// Will have to check if && count != 1??
-		if(memory_table[row + 1][4] == 0) {
-			memory_table[row][1] += memory_table[row + 1][1];
-			memory_table[row][3] += memory_table[row + 1][1];
-			for(i = row + 1; i < count - 1; i++) {
-				// Shift memory table up
-				memory_table[i][0] = memory_table[i - 1][0] + 1;
-				memory_table[i][1] = memory_table[i + 1][1];
-				memory_table[i][2] = memory_table[i - 1][3] + 1;
-				memory_table[i][3] = memory_table[i + 1][3];
-				memory_table[i][4] = memory_table[i + 1][4];
-				memory_table[i][5] = memory_table[i + 1][5];				
-			}
-			count--;
-		}
-	}
-	else if(row == count - 1) {
-		if(memory_table[row - 1][4] == 0) {
-			memory_table[row - 1][1] += memory_table[row][1];
-			memory_table[row - 1][3] += memory_table[row][1];
-			count--;
-		}
-	}
-	else {	// FIX NEXT
-		while(count != 1 && (memory_table[row - 1][4] == 0 || memory_table[row + 1][4] == 0)) {	// && count != 1 ?
-			if(count != 1 && memory_table[row - 1][4] == 0) {
-				memory_table[row - 1][1] += memory_table[row][1];
-				memory_table[row - 1][3] += memory_table[row][1];
-				memory_table[row][1] = 0;	
-				count--;			
-			}
-			// FIX, in case where both upper and lower row are zero, should all add to top row
-			if(count != 1 && memory_table[row + 1][4] == 0) {
-				memory_table[row][1] += memory_table[row + 1][1];
-				memory_table[row][3] += memory_table[row + 1][1];
-				memory_table[row + 1][1] = 0;
-				count--;	// still decrements count twice 
-			}
-		}
-	}
-
-	//curr_mem_size -= size;
-}
-*/
 
 int* first_fit(int size_request, int thread_num) 
 {
@@ -167,7 +159,7 @@ int* memory_allocate(int size, int num)
 	if(FUNCTION_NUM == 1) {
 		starting_ptr = first_fit(size, num);
 		if(starting_ptr != NULL) {
-			curr_mem_size += size;
+			//curr_mem_size += size;
 			if(curr_mem_size == MAX_MEMORY_SIZE) {
 				count--;
 			}
@@ -185,8 +177,8 @@ void memory_deallocate(int size, int num)
 		if(memory_table[i][5] == num) {
 			memory_table[i][4] = 0;
 			memory_table[i][5] = 0;
+			curr_mem_size -= size;
 			concatenate();
-			//remove_memory_block(i, size, num);
 			break;			
 		}
 	}
@@ -198,9 +190,10 @@ void free_memory()
 	int i;
 
 	for(i = 0; i < 4; i++) {
-		if(user_th_buff[i % BUFFER_SIZE] != NULL && user_th_buff[i % BUFFER_SIZE]->waiting == true) {
+		if(user_th_buff[i % BUFFER_SIZE] != NULL && user_th_buff[i % BUFFER_SIZE]->wake_up != true) {
 			user_th_buff[i % BUFFER_SIZE]->wake_up = true;
-			printf("Waking up thread");
+			printf("In free_memory() waking up Thread %d", user_th_buff[i % BUFFER_SIZE]->num_thread);
+			//user_th_buff[i % BUFFER_SIZE] = NULL;
 		}
 	}
 }
@@ -216,15 +209,14 @@ void *mms(void *arg)        // Starting function for MMS thread
 			temp_size = user_th_buff[j % BUFFER_SIZE]->mem_size;
 			temp_num = user_th_buff[j % BUFFER_SIZE]->num_thread;
 			if(temp_size + curr_mem_size > MAX_MEMORY_SIZE) {
-				printf("NO SPACE AVAILABLE, NEED TO FREE MEMORY");
-				// Free memory
-				// free_memory()
+				printf("NO SPACE AVAILABLE, NEED TO FREE MEMORY\n");
+				free_memory();
+				sleep(2);
 			}
 			else {
-				//curr_mem_size += temp_size;
 				printf("MMS: Receives request of %d memory space from Thread %d\n", temp_size, temp_num);
 				starting_ptr = memory_allocate(temp_size, temp_num);
-				//if(starting_ptr == NULL) {
+				//if(starting_ptr == NULL) {		// Means no large enough hole
 				//	printf("HERE FIX\n");
 				//}
 				print_memory();
@@ -250,7 +242,7 @@ void *user(void *arg)       // Starting function for user threads
 	struct user_thread_info* user_thread = malloc(sizeof(struct user_thread_info));
 	user_thread->num_thread = *(int*)arg;
 	user_thread->sleep_time = (rand() % 10) + 1;
-	user_thread->mem_size = (rand() % MAX_MEMORY_SIZE / 2) + 1;
+	user_thread->mem_size = (rand() % MAX_MEMORY_SIZE / 4) + 1;
 	if(user_thread->mem_size % 2 != 0) {
 		user_thread->mem_size = user_thread->mem_size + 1;
 	}
@@ -272,13 +264,12 @@ void *user(void *arg)       // Starting function for user threads
 		user_thread->sleep_time--;
 	}
 	printf("Thread %d waking up\n", user_thread->num_thread);
-	user_th_buff2[position2 % BUFFER_SIZE] = user_thread;			// Request memory to be deallocated
-	while(!user_thread->serviced) {}
-	//sleep(2);
 	pthread_mutex_lock(&mutx2);
+	user_th_buff2[position2 % BUFFER_SIZE] = user_thread;			// Request memory to be deallocated
 	position2++;
 	pthread_mutex_unlock(&mutx2);
-	printf("About to free Thread %d\n", user_thread->num_thread);
+	while(!user_thread->serviced) {}			// Loop until MMS deallocates user memory
+	//printf("About to free Thread %d\n", user_thread->num_thread);
 	free(user_thread);
 }
 
@@ -288,7 +279,7 @@ int main(int argc, char **argv)
 	//THREAD_NUM = atoi(argv[1]);
 	//FUNCTION_NUM = atoi(argv[2]);
 
-	THREAD_NUM = 3;
+	THREAD_NUM = 4;
 	FUNCTION_NUM = 1;
 	//defrag = atoi(argv[3]);
 	int i;
