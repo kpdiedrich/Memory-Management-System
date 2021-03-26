@@ -61,7 +61,7 @@ void print_memory()
 void insert_memory_block(int row, int size, int thread_id)
 {
 	int i;
-	curr_mem_size += size;
+	//curr_mem_size += size;
 	if(row != count - 1 && size < memory_table[row][1]) {			
 		for(i = count; i > row + 1; i--) {						// Shift memory down but only increment block #
 			memory_table[i][0] = memory_table[i - 1][0] + 1;
@@ -132,7 +132,7 @@ void concatenate()
 int* first_fit(int size_request, int thread_num) 
 {
 	int i;
-	int* starting_ptr;
+	int* starting_ptr = NULL;
 
 	printf("First Fit\n\n");
 	for(i = 0; i < count; i++) {
@@ -142,6 +142,7 @@ int* first_fit(int size_request, int thread_num)
 			return starting_ptr;	
 		}
 	}
+	return starting_ptr;
 }
 
 int* memory_allocate(int size, int num) 
@@ -151,13 +152,18 @@ int* memory_allocate(int size, int num)
 	if(FUNCTION_NUM == 1) {
 		starting_ptr = first_fit(size, num);
 		if(starting_ptr != NULL) {
-			//curr_mem_size += size;
-			if(curr_mem_size == MAX_MEMORY_SIZE) {
-				count--;
-			}
+			curr_mem_size += size;
 		}
 		return starting_ptr;
 	}
+/*
+	else if(FUNCTION_NUM == 2) {
+
+	}
+	else {
+
+	}
+*/
 }
 
 void memory_deallocate(int size, int num)
@@ -181,10 +187,10 @@ void free_memory()
 {
 	int i;
 
-	for(i = 0; i < 4; i++) {
-		if(user_th_buff[i % BUFFER_SIZE] != NULL && user_th_buff[i % BUFFER_SIZE]->wake_up != true) {
+	for(i = 0; i < THREAD_NUM; i++) {
+		if(user_th_buff[i % BUFFER_SIZE] != NULL && user_th_buff[i % BUFFER_SIZE]->waiting != true) {
 			user_th_buff[i % BUFFER_SIZE]->wake_up = true;
-			printf("In free_memory() waking up Thread %d", user_th_buff[i % BUFFER_SIZE]->num_thread);
+			printf("In free_memory() waking up Thread %d\n", user_th_buff[i % BUFFER_SIZE]->num_thread);
 			//user_th_buff[i % BUFFER_SIZE] = NULL;
 		}
 	}
@@ -192,7 +198,7 @@ void free_memory()
 
 void *mms(void *arg)        // Starting function for MMS thread
 {
-	int j = 0, i = 0;
+	int j = 0, i = 0, k;
 	int temp_size, temp_size2, temp_num, temp_num2;
 	int *starting_ptr;
 
@@ -204,13 +210,16 @@ void *mms(void *arg)        // Starting function for MMS thread
 				printf("NO SPACE AVAILABLE, NEED TO FREE MEMORY\n");
 				free_memory();
 				sleep(2);
+				j--;		// Decrement 1 so MMS will serive the same thread next time around
 			}
 			else {
 				printf("MMS: Receives request of %d memory space from Thread %d\n", temp_size, temp_num);
 				starting_ptr = memory_allocate(temp_size, temp_num);
-				//if(starting_ptr == NULL) {		// Means no large enough hole
-				//	printf("HERE FIX\n");
-				//}
+				if(starting_ptr == NULL) {		// Means no large enough hole
+					printf("NO SPACE AVAILABLE, NEED TO FREE MEMORY\n");
+					free_memory();
+					j--;
+				}
 				print_memory();
 				user_th_buff[j % BUFFER_SIZE]->waiting = false;		// user no longer waiting once mms allocates the memory
 				j++;
@@ -222,8 +231,14 @@ void *mms(void *arg)        // Starting function for MMS thread
 			printf("MMS: Receives deallocation request of %d memory space from Thread %d\n\n", temp_size2, temp_num2);
 			memory_deallocate(temp_size2, temp_num2);
 			print_memory();
-			user_th_buff2[i % BUFFER_SIZE]->serviced = true;			
-			i++;	
+			for(k = 0; k < BUFFER_SIZE; k++) {
+				if(user_th_buff[k] != NULL && user_th_buff[k]->num_thread == temp_num2) {
+					user_th_buff[k] = NULL;
+					break;
+				}
+			}
+			user_th_buff2[i % BUFFER_SIZE]->serviced = true;
+			i++;			
 		}
 
 	}
@@ -234,7 +249,7 @@ void *user(void *arg)       // Starting function for user threads
 	struct user_thread_info* user_thread = malloc(sizeof(struct user_thread_info));
 	user_thread->num_thread = *(int*)arg;
 	user_thread->sleep_time = (rand() % 20) + 1;
-	user_thread->mem_size = (rand() % MAX_MEMORY_SIZE / 4) + 1;
+	user_thread->mem_size = (rand() % MAX_MEMORY_SIZE / 2) + 10;
 	if(user_thread->mem_size % 2 != 0) {
 		user_thread->mem_size = user_thread->mem_size + 1;
 	}
@@ -251,7 +266,7 @@ void *user(void *arg)       // Starting function for user threads
 	//sleep(1);
 	printf("Thread %d: request %d memory space, going to sleep\n", user_thread->num_thread, user_thread->mem_size);
 	sem_post(&semFull);
-	while(user_thread->waiting) {}	// Wait for MMS to service request
+	while(user_thread->waiting) {}	// Wait for MMS to service request, once become false, user has been allocated memory
 	while(!user_thread->wake_up && user_thread->sleep_time != 0) {
 		user_thread->sleep_time--;
 	}
@@ -271,7 +286,7 @@ int main(int argc, char **argv)
 	//THREAD_NUM = atoi(argv[1]);
 	//FUNCTION_NUM = atoi(argv[2]);
 
-	THREAD_NUM = 6;
+	THREAD_NUM = 8;
 	FUNCTION_NUM = 1;
 	//defrag = atoi(argv[3]);
 	int i;
@@ -327,6 +342,8 @@ int main(int argc, char **argv)
             perror("Failed to join user thread");
         }
 	}
+
+	printf("curr_mem_size = %d\n", curr_mem_size);
 
 	sem_destroy(&semEmpty);         // Destroy semaphore
     sem_destroy(&semFull);	        // Destroy semaphore
