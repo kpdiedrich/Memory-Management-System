@@ -9,14 +9,14 @@
 #include <time.h>
 
 #define MAX_MEMORY_SIZE 64
-//#define THREAD_NUM 8
 #define BUFFER_SIZE 10
 
 sem_t semEmpty;         // Semaphore for # of empty spots in buffer
-sem_t semFull;          // Semaphore for # of full spots in buffer
+sem_t buff2;
 
 pthread_mutex_t mutx;	// Mutex
 pthread_mutex_t mutx2;	// Mutex
+pthread_mutex_t print;
 
 int THREAD_NUM;			// # of threads requesting memory from the MMS thread 
 int FUNCTION_NUM;		// 1 = first fit, 2 = best fit, 3 = worst fit 
@@ -47,6 +47,7 @@ int position2 = 0;
 void print_memory() 
 {
 	int i, j;
+	pthread_mutex_lock(&print);
 	printf("----------MEMORY STATUS----------\n\n");
 	printf("Block\tSize\tStart\tEnd\tFlag\tThread\n");
 	for(i = 0; i < count; i++) {
@@ -56,12 +57,12 @@ void print_memory()
 		printf("\n");		
 	}
 	printf("\nNumber of Blocks = %d\n\n", count);
+	pthread_mutex_unlock(&print);
 }
 
 void insert_memory_block(int row, int size, int thread_id)
 {
 	int i;
-	//curr_mem_size += size;
 	if(row != count - 1 && size < memory_table[row][1]) {			
 		for(i = count; i > row + 1; i--) {						// Shift memory down but only increment block #
 			memory_table[i][0] = memory_table[i - 1][0] + 1;
@@ -104,7 +105,6 @@ void concatenate()
 	int i, k;
 
 	for(i = 0; i < count; i++) {
-		//if(count != 1 && memory_table[i][4] == 0) {
 		if(memory_table[i][4] == 0) {
 			if(i != count - 1 && memory_table[i + 1][4] == 0) {
 				memory_table[i][1] += memory_table[i + 1][1];
@@ -126,7 +126,6 @@ void concatenate()
 			}
 		}
 	}
-	//concatenate();
 }
 
 int* first_fit(int size_request, int thread_num) 
@@ -188,59 +187,61 @@ void free_memory()
 	int i;
 
 	for(i = 0; i < THREAD_NUM; i++) {
-		if(user_th_buff[i % BUFFER_SIZE] != NULL && user_th_buff[i % BUFFER_SIZE]->waiting != true) {
+		if(user_th_buff[i % BUFFER_SIZE] != NULL && user_th_buff[i % BUFFER_SIZE]->serviced != true && user_th_buff[i % BUFFER_SIZE]->waiting != true) {
 			user_th_buff[i % BUFFER_SIZE]->wake_up = true;
 			printf("In free_memory() waking up Thread %d\n", user_th_buff[i % BUFFER_SIZE]->num_thread);
-			//user_th_buff[i % BUFFER_SIZE] = NULL;
 		}
 	}
 }
 
 void *mms(void *arg)        // Starting function for MMS thread
 {
-	int j = 0, i = 0, k;
+	int i, j;
+	int buff_count = 0;
+	int buff2_count = 0;
 	int temp_size, temp_size2, temp_num, temp_num2;
 	int *starting_ptr;
 
-	while(i != THREAD_NUM) {				// Loop until all users have been serviced
-		if(user_th_buff[j % BUFFER_SIZE] != NULL && user_th_buff[j % BUFFER_SIZE]->waiting == true) {
-			temp_size = user_th_buff[j % BUFFER_SIZE]->mem_size;
-			temp_num = user_th_buff[j % BUFFER_SIZE]->num_thread;
-			if(temp_size + curr_mem_size > MAX_MEMORY_SIZE) {
-				printf("NO SPACE AVAILABLE, NEED TO FREE MEMORY\n");
-				free_memory();
-				sleep(2);
-				j--;		// Decrement 1 so MMS will serive the same thread next time around
-			}
-			else {
-				printf("MMS: Receives request of %d memory space from Thread %d\n", temp_size, temp_num);
+	while(buff2_count != THREAD_NUM) {				// Loop until all user memory has been deallocated
+
+		for(i = 0; i < BUFFER_SIZE; i++) {
+			if(user_th_buff[i] != NULL && user_th_buff[i]-> waiting == true) {
+				temp_size = user_th_buff[i]->mem_size;
+				temp_num = user_th_buff[i]->num_thread;
+				printf("MMS: Receives request of %d memory space from Thread %d\n\n", temp_size, temp_num);
 				starting_ptr = memory_allocate(temp_size, temp_num);
 				if(starting_ptr == NULL) {		// Means no large enough hole
-					printf("NO SPACE AVAILABLE, NEED TO FREE MEMORY\n");
+					printf("NO SPACE AVAILABLE FOR THREAD %d, NEED TO FREE MEMORY\n", temp_num);
 					free_memory();
-					j--;
-				}
-				print_memory();
-				user_th_buff[j % BUFFER_SIZE]->waiting = false;		// user no longer waiting once mms allocates the memory
-				j++;
-			}
-		}	
-		if(user_th_buff2[i % BUFFER_SIZE] != NULL && user_th_buff2[i % BUFFER_SIZE]->waiting == false) {
-			temp_size2 = user_th_buff2[i % BUFFER_SIZE]->mem_size;
-			temp_num2 = user_th_buff2[i % BUFFER_SIZE]->num_thread;
-			printf("MMS: Receives deallocation request of %d memory space from Thread %d\n\n", temp_size2, temp_num2);
-			memory_deallocate(temp_size2, temp_num2);
-			print_memory();
-			for(k = 0; k < BUFFER_SIZE; k++) {
-				if(user_th_buff[k] != NULL && user_th_buff[k]->num_thread == temp_num2) {
-					user_th_buff[k] = NULL;
+					buff_count--;
+					sleep(2);
 					break;
 				}
+				else {
+					print_memory();
+					user_th_buff[i]->waiting = false;		// user no longer waiting once mms allocates the memory
+					user_th_buff[i] = NULL;	
+					sem_post(&semEmpty);
+					buff_count++;				
+					break;					
+				}
 			}
-			user_th_buff2[i % BUFFER_SIZE]->serviced = true;
-			i++;			
 		}
 
+		for(j = 0; j < BUFFER_SIZE; j++) {
+			if(user_th_buff2[j] != NULL && user_th_buff2[j]->waiting == false) {
+				temp_size2 = user_th_buff2[j]->mem_size;
+				temp_num2 = user_th_buff2[j]->num_thread;
+				printf("MMS: Receives deallocation request of %d memory space from Thread %d\n\n", temp_size2, temp_num2);
+				memory_deallocate(temp_size2, temp_num2);
+				print_memory();	
+				user_th_buff2[j]->serviced = true;
+				user_th_buff2[j] = NULL;
+				sem_post(&buff2);
+				buff2_count++;						
+				break;
+			}
+		}
 	}
 }
 
@@ -248,8 +249,8 @@ void *user(void *arg)       // Starting function for user threads
 {
 	struct user_thread_info* user_thread = malloc(sizeof(struct user_thread_info));
 	user_thread->num_thread = *(int*)arg;
-	user_thread->sleep_time = (rand() % 20) + 1;
-	user_thread->mem_size = (rand() % MAX_MEMORY_SIZE / 2) + 10;
+	user_thread->sleep_time = (rand() % 64) + 1;
+	user_thread->mem_size = (rand() % MAX_MEMORY_SIZE / 4) + 1;
 	if(user_thread->mem_size % 2 != 0) {
 		user_thread->mem_size = user_thread->mem_size + 1;
 	}
@@ -257,26 +258,33 @@ void *user(void *arg)       // Starting function for user threads
 	user_thread->waiting = true;
 	user_thread->wake_up = false;
 
-	// Request memory and leave loop after memory is deallocated
+	// Request memory and leave loop after allocated memory is deallocated
 	sem_wait(&semEmpty);
 	pthread_mutex_lock(&mutx);
-	user_th_buff[position % BUFFER_SIZE] = user_thread;
-	position++;
-	pthread_mutex_unlock(&mutx);
-	//sleep(1);
+	while(user_th_buff[position % BUFFER_SIZE] != NULL) {		// Search for open element in buffer
+		position++;
+	}
+	pthread_mutex_lock(&print);
 	printf("Thread %d: request %d memory space, going to sleep\n", user_thread->num_thread, user_thread->mem_size);
-	sem_post(&semFull);
+	pthread_mutex_unlock(&print);
+	user_th_buff[position % BUFFER_SIZE] = user_thread;
+	pthread_mutex_unlock(&mutx);
 	while(user_thread->waiting) {}	// Wait for MMS to service request, once become false, user has been allocated memory
 	while(!user_thread->wake_up && user_thread->sleep_time != 0) {
 		user_thread->sleep_time--;
 	}
+	sleep(1);
+	pthread_mutex_lock(&print);
 	printf("Thread %d waking up\n", user_thread->num_thread);
+	pthread_mutex_unlock(&print);
+	sem_wait(&buff2);		// Decrement buff2
 	pthread_mutex_lock(&mutx2);
+	while(user_th_buff2[position2 % BUFFER_SIZE] != NULL) {		// Search for open element in buffer
+		position2++;
+	}
 	user_th_buff2[position2 % BUFFER_SIZE] = user_thread;			// Request memory to be deallocated
-	position2++;
 	pthread_mutex_unlock(&mutx2);
 	while(!user_thread->serviced) {}			// Loop until MMS deallocates user memory
-	//printf("About to free Thread %d\n", user_thread->num_thread);
 	free(user_thread);
 }
 
@@ -286,7 +294,7 @@ int main(int argc, char **argv)
 	//THREAD_NUM = atoi(argv[1]);
 	//FUNCTION_NUM = atoi(argv[2]);
 
-	THREAD_NUM = 8;
+	THREAD_NUM = 16;
 	FUNCTION_NUM = 1;
 	//defrag = atoi(argv[3]);
 	int i;
@@ -302,18 +310,20 @@ int main(int argc, char **argv)
 		user_th_buff2[i] = NULL;
 	}
 
-	int state1, state2, state3, state4;
+	int state1, state2, state4, state5, state6;
 	state1 = pthread_mutex_init(&mutx, NULL);
 	state4 = pthread_mutex_init(&mutx2, NULL);
+	state6 = pthread_mutex_init(&print, NULL);
     state2 = sem_init(&semEmpty, 0, BUFFER_SIZE);
-    state3 = sem_init(&semFull, 0, 0);
+	state5 = sem_init(&buff2, 0, BUFFER_SIZE);
 	//mutex initialization
 	//semaphore initialization, first value = 0
 
-	if(state1||state2||state3||state4!=0) {
+	if((state1 || state2 || state4 || state5) != 0) {
 		puts("Error mutex & semaphore initialization!!!");
 	}
 
+	// Initialize Memory
 	memory_table[0][0] = 1;
 	memory_table[0][1] = MAX_MEMORY_SIZE;
 	memory_table[0][2] = 0;
@@ -343,11 +353,10 @@ int main(int argc, char **argv)
         }
 	}
 
-	printf("curr_mem_size = %d\n", curr_mem_size);
-
 	sem_destroy(&semEmpty);         // Destroy semaphore
-    sem_destroy(&semFull);	        // Destroy semaphore
+	sem_destroy(&buff2);			// Destroy semaphore
 	pthread_mutex_destroy(&mutx);	// Destroy mutex
 	pthread_mutex_destroy(&mutx2);	// Destroy mutex
+	pthread_mutex_destroy(&print);	// Destroy mutex
 	return 0;
 }
