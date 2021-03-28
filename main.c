@@ -20,7 +20,7 @@ pthread_mutex_t print;
 
 int THREAD_NUM;			// # of threads requesting memory from the MMS thread 
 int FUNCTION_NUM;		// 1 = first fit, 2 = best fit, 3 = worst fit 
-int defrag;             // 0 = defragmentation disabled, 1 = defragmentation enabled
+int defrag;				// 0 = defragmentation disabled, 1 = defragmentation enabled
 
 int memory_table[20][6];
 int count = 1;
@@ -144,6 +144,29 @@ int* first_fit(int size_request, int thread_num)
 	return starting_ptr;
 }
 
+int* best_fit(int size_request, int thread_num)
+{
+	int i, smallest = MAX_MEMORY_SIZE + 1, mem_index;
+	int* starting_ptr = NULL;
+
+	printf("Best Fit\n\n");
+	for(i = 0; i < count; i++) {
+		if(memory_table[i][4] != 1 && memory_table[i][1] >= size_request) {
+			if(memory_table[i][1] < smallest) {
+				smallest = memory_table[i][1];
+				mem_index = i;
+				starting_ptr = memory_block_ptr;
+			}
+		}
+	}
+
+	if(smallest == MAX_MEMORY_SIZE + 1) {
+		return NULL;
+	}
+	insert_memory_block(mem_index, size_request, thread_num);
+	return starting_ptr;	
+}
+
 int* memory_allocate(int size, int num) 
 {
 	int* starting_ptr;
@@ -155,12 +178,18 @@ int* memory_allocate(int size, int num)
 		}
 		return starting_ptr;
 	}
-/*
+
 	else if(FUNCTION_NUM == 2) {
-
+		starting_ptr = best_fit(size, num);
+		if(starting_ptr != NULL) {
+			curr_mem_size += size;
+		}
+		return starting_ptr;		
 	}
-	else {
 
+/*
+	else {
+		// worst_fit
 	}
 */
 }
@@ -229,7 +258,7 @@ void *mms(void *arg)        // Starting function for MMS thread
 		}
 
 		for(j = 0; j < BUFFER_SIZE; j++) {
-			if(user_th_buff2[j] != NULL && user_th_buff2[j]->waiting == false) {
+			if(user_th_buff2[j] != NULL) {
 				temp_size2 = user_th_buff2[j]->mem_size;
 				temp_num2 = user_th_buff2[j]->num_thread;
 				printf("MMS: Receives deallocation request of %d memory space from Thread %d\n\n", temp_size2, temp_num2);
@@ -295,7 +324,7 @@ int main(int argc, char **argv)
 	//FUNCTION_NUM = atoi(argv[2]);
 
 	THREAD_NUM = 16;
-	FUNCTION_NUM = 1;
+	FUNCTION_NUM = 2;
 	//defrag = atoi(argv[3]);
 	int i;
 	memory_block_ptr = malloc(MAX_MEMORY_SIZE * sizeof(int));		// Allocate block of memory
@@ -314,7 +343,7 @@ int main(int argc, char **argv)
 	state1 = pthread_mutex_init(&mutx, NULL);
 	state4 = pthread_mutex_init(&mutx2, NULL);
 	state6 = pthread_mutex_init(&print, NULL);
-    state2 = sem_init(&semEmpty, 0, BUFFER_SIZE);
+    state2 = sem_init(&semEmpty, 0, BUFFER_SIZE / 2);
 	state5 = sem_init(&buff2, 0, BUFFER_SIZE);
 	//mutex initialization
 	//semaphore initialization, first value = 0
@@ -336,7 +365,7 @@ int main(int argc, char **argv)
 	// Create MMS Thread and THREAD_NUM User Threads
 	if(pthread_create(&mms_th, NULL, mms, &mms_thread) != 0) {
         perror("Failed to create MMS thread");   
-    }
+	}
 	for(i = 0; i < THREAD_NUM; i++) {
 		if(pthread_create(user_th + i, NULL, user, &thread_args[i]) != 0) {
             perror("Failed to create user thread");
