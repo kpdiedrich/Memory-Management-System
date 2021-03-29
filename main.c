@@ -320,11 +320,11 @@ void *user(void *arg)       // Starting function for user threads
 int main(int argc, char **argv)
 {
 	srand(time(NULL));	
-	//THREAD_NUM = atoi(argv[1]);
-	//FUNCTION_NUM = atoi(argv[2]);
+	THREAD_NUM = atoi(argv[1]);
+	FUNCTION_NUM = atoi(argv[2]);
 
-	THREAD_NUM = 16;
-	FUNCTION_NUM = 2;
+	//THREAD_NUM = 16;
+	//FUNCTION_NUM = 2;
 	//defrag = atoi(argv[3]);
 	int i;
 	memory_block_ptr = malloc(MAX_MEMORY_SIZE * sizeof(int));		// Allocate block of memory
