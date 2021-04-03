@@ -1,2 +1,2 @@
 # Memory-Management-System
-In progress...
+Memory management system using C and pthreads. Still a work in progress.
