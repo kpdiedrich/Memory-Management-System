@@ -11,7 +11,7 @@
 #define MAX_MEMORY_SIZE 64
 #define BUFFER_SIZE 10
 
-sem_t semEmpty;         // Semaphore for # of empty spots in buffer
+sem_t buff;         // Semaphore for # of empty spots in buffer
 sem_t buff2;
 
 pthread_mutex_t mutx;	// Mutex
@@ -20,7 +20,7 @@ pthread_mutex_t print;
 
 int THREAD_NUM;			// # of threads requesting memory from the MMS thread 
 int FUNCTION_NUM;		// 1 = first fit, 2 = best fit, 3 = worst fit 
-int defrag;				// 0 = defragmentation disabled, 1 = defragmentation enabled
+int DEFRAGMENT;			// 0 = defragmentation disabled, 1 = defragmentation enabled
 
 int memory_table[20][6];
 int count = 1;
@@ -190,6 +190,64 @@ int* worst_fit(int size_request, int thread_num)
 	return starting_ptr;
 }
 
+void defragment()
+{
+	int i, j, k;
+	int temp_size, temp_num, start;
+	bool enter_loop = false;
+
+	for(i = 0; i < count - 1; i++) {
+		if(memory_table[i][5] == 0) {
+			temp_num = memory_table[i][0];
+			temp_size = memory_table[i][1];
+			start = i;
+			enter_loop = true;
+			break;
+		}
+	}
+
+	if(enter_loop) {
+		i = 0;
+		if(memory_table[count - 1][5] == 0) {
+			memory_table[count - 1][1] += memory_table[start][1];
+			for(k = start; k < count - 1; k++) {
+				//Shift memory table up
+				memory_table[k][0] = temp_num + i;
+				i++;
+				memory_table[k][1] = memory_table[k + 1][1];
+				memory_table[k][2] = memory_table[k + 1][2] - temp_size;
+				memory_table[k][3] = memory_table[k + 1][3] - temp_size;
+				memory_table[k][4] = memory_table[k + 1][4];
+				memory_table[k][5] = memory_table[k + 1][5];	
+			}
+			count--;
+			memory_table[count - 1][0] = count;
+			memory_table[count - 1][2] = memory_table[count - 2][3] + 1;
+			memory_table[count - 1][3] = memory_table[count - 1][2] + (memory_table[count - 1][1] - 1);
+			memory_table[count - 1][4] = 0;
+			memory_table[count - 1][5] = 0;		
+		}
+		else {
+			for(k = start; k < count - 1; k++) {
+				memory_table[k][0] = temp_num + i;
+				i++;
+				memory_table[k][1] = memory_table[k + 1][1];
+				memory_table[k][2] = memory_table[k + 1][2] - temp_size;
+				memory_table[k][3] = memory_table[k + 1][3] - temp_size;
+				memory_table[k][4] = memory_table[k + 1][4];
+				memory_table[k][5] = memory_table[k + 1][5];
+			}
+			memory_table[count - 1][0] = count;
+			memory_table[count - 1][1] = temp_size;
+			memory_table[count - 1][2] = memory_table[count - 2][3] + 1;
+			memory_table[count - 1][3] = memory_table[count - 1][2] + (temp_size - 1);
+			memory_table[count - 1][4] = 0;
+			memory_table[count - 1][5] = 0;		
+		}
+	}
+	printf("COMPACTION RESULT\n\n");
+}
+
 int* memory_allocate(int size, int num) 
 {
 	int* starting_ptr;
@@ -275,7 +333,7 @@ void *mms(void *arg)        // Starting function for MMS thread
 					print_memory();
 					user_th_buff[i]->waiting = false;		// user no longer waiting once mms allocates the memory
 					user_th_buff[i] = NULL;	
-					sem_post(&semEmpty);
+					sem_post(&buff);
 					buff_count++;				
 					break;					
 				}
@@ -289,6 +347,10 @@ void *mms(void *arg)        // Starting function for MMS thread
 				printf("MMS: Receives deallocation request of %d memory space from Thread %d\n\n", temp_size2, temp_num2);
 				memory_deallocate(temp_size2, temp_num2);
 				print_memory();	
+				if(DEFRAGMENT == 1) {
+					defragment();
+					print_memory();
+				}
 				user_th_buff2[j]->serviced = true;
 				user_th_buff2[j] = NULL;
 				sem_post(&buff2);
@@ -303,7 +365,7 @@ void *user(void *arg)       // Starting function for user threads
 {
 	struct user_thread_info* user_thread = malloc(sizeof(struct user_thread_info));
 	user_thread->num_thread = *(int*)arg;
-	user_thread->sleep_time = (rand() % 64) + 1;
+	user_thread->sleep_time = (rand() % 1000) + 10000;
 	user_thread->mem_size = (rand() % MAX_MEMORY_SIZE / 4) + 1;
 	if(user_thread->mem_size % 2 != 0) {
 		user_thread->mem_size = user_thread->mem_size + 1;
@@ -313,7 +375,7 @@ void *user(void *arg)       // Starting function for user threads
 	user_thread->wake_up = false;
 
 	// Request memory and leave loop after allocated memory is deallocated
-	sem_wait(&semEmpty);
+	sem_wait(&buff);
 	pthread_mutex_lock(&mutx);
 	while(user_th_buff[position % BUFFER_SIZE] != NULL) {		// Search for open element in buffer
 		position++;
@@ -332,7 +394,7 @@ void *user(void *arg)       // Starting function for user threads
 	pthread_mutex_unlock(&print);
 	sem_wait(&buff2);		// Decrement buff2
 	pthread_mutex_lock(&mutx2);
-	sleep(1);
+	//sleep(1);
 	while(user_th_buff2[position2 % BUFFER_SIZE] != NULL) {		// Search for open element in buffer
 		position2++;
 	}
@@ -347,10 +409,10 @@ int main(int argc, char **argv)
 	srand(time(NULL));	
 	THREAD_NUM = atoi(argv[1]);
 	FUNCTION_NUM = atoi(argv[2]);
-
-	//THREAD_NUM = 25;
+	DEFRAGMENT = atoi(argv[3]);
+	//THREAD_NUM = 12;
 	//FUNCTION_NUM = 3;
-	//defrag = atoi(argv[3]);
+	//DEFRAGMENT = 1;
 	int i;
 	memory_block_ptr = malloc(MAX_MEMORY_SIZE * sizeof(int));		// Allocate block of memory
 	pthread_t mms_th;
@@ -368,7 +430,7 @@ int main(int argc, char **argv)
 	state1 = pthread_mutex_init(&mutx, NULL);
 	state4 = pthread_mutex_init(&mutx2, NULL);
 	state6 = pthread_mutex_init(&print, NULL);
-	state2 = sem_init(&semEmpty, 0, BUFFER_SIZE / 2);
+	state2 = sem_init(&buff, 0, BUFFER_SIZE);
 	state5 = sem_init(&buff2, 0, BUFFER_SIZE);
 	//mutex initialization
 	//semaphore initialization, first value = 0
@@ -407,8 +469,8 @@ int main(int argc, char **argv)
 		}
 	}
 
-	sem_destroy(&semEmpty);         // Destroy semaphore
-	sem_destroy(&buff2);			// Destroy semaphore
+	sem_destroy(&buff);         // Destroy semaphore
+	sem_destroy(&buff2);		// Destroy semaphore
 	pthread_mutex_destroy(&mutx);	// Destroy mutex
 	pthread_mutex_destroy(&mutx2);	// Destroy mutex
 	pthread_mutex_destroy(&print);	// Destroy mutex
